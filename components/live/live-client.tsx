@@ -18,17 +18,17 @@ type Phase2Candidate = Pick<Candidate, "id" | "name">;
 
 type Phase2PanelState =
   | { kind: "hidden" }
-  | { kind: "role_list" }
-  | { kind: "loading"; roleId: string }
   | {
       kind: "loaded";
-      roleId: string;
-      roleName: string;
-      quota: number;
-      candidates: Phase2Candidate[];
-      initialSelectedIds: string[];
-      initialSubmitted: boolean;
-      initialBallotId: string | null;
+      roles: Array<{
+        roleId: string;
+        roleName: string;
+        quota: number;
+        candidates: Phase2Candidate[];
+        initialSelectedIds: string[];
+        initialSubmitted: boolean;
+        initialBallotId: string | null;
+      }>;
     };
 
 interface LiveClientProps {
@@ -66,7 +66,9 @@ export function LiveClient({
   const [loadingVote, setLoadingVote] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [phase2Panel, setPhase2Panel] = useState<Phase2PanelState>(
-    initialSync?.view_mode === "phase2_role_select" ? { kind: "role_list" } : { kind: "hidden" }
+    sessionStatus === "phase2_open" || sessionStatus === "phase2_closed"
+      ? { kind: "loaded", roles: [] }
+      : { kind: "hidden" }
   );
 
   const viewMode = syncState?.view_mode ?? "role_list";
@@ -79,13 +81,74 @@ export function LiveClient({
     }
   }, [supabase]);
 
-  const applyViewMode = useCallback((nextViewMode?: string | null) => {
-    if (nextViewMode === "phase2_role_select") {
-      setPhase2Panel((prev) => (prev.kind === "hidden" ? { kind: "role_list" } : prev));
-      return;
-    }
-    setPhase2Panel({ kind: "hidden" });
-  }, []);
+  const loadAllPhase2 = useCallback(async () => {
+    setPhase2Panel({ kind: "loaded", roles: [] });
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    const { data: candidates } = await supabase
+      .from("candidates")
+      .select("id, name, role_id")
+      .eq("session_id", sessionId)
+      .eq("advanced_to_phase2", true)
+      .order("name", { ascending: true });
+
+    const { data: ballots } = user
+      ? await supabase
+          .from("phase2_ballots")
+          .select("id, role_id, submitted")
+          .eq("session_id", sessionId)
+          .eq("user_id", user.id)
+      : { data: [] };
+
+    const ballotIds = (ballots ?? []).map((ballot) => ballot.id);
+    const { data: selections } = ballotIds.length
+      ? await supabase
+          .from("phase2_selections")
+          .select("ballot_id, candidate_id")
+          .in("ballot_id", ballotIds)
+      : { data: [] };
+
+    const selectionsByBallot = new Map<string, string[]>();
+    (selections ?? []).forEach((selection) => {
+      const current = selectionsByBallot.get(selection.ballot_id) ?? [];
+      current.push(selection.candidate_id);
+      selectionsByBallot.set(selection.ballot_id, current);
+    });
+
+    const nextRoles = roles.map((role) => {
+      const roleCandidates = (candidates ?? []).filter(
+        (candidate) => candidate.role_id === role.id
+      );
+      const ballot = (ballots ?? []).find((row) => row.role_id === role.id);
+      const selectedIds = ballot ? selectionsByBallot.get(ballot.id) ?? [] : [];
+
+      return {
+        roleId: role.id,
+        roleName: role.name,
+        quota: role.quota,
+        candidates: roleCandidates,
+        initialSelectedIds: selectedIds,
+        initialSubmitted: Boolean(ballot?.submitted),
+        initialBallotId: ballot?.id ?? null,
+      };
+    });
+
+    setPhase2Panel({ kind: "loaded", roles: nextRoles });
+  }, [roles, sessionId, supabase]);
+
+  const applyViewMode = useCallback(
+    (nextViewMode?: string | null) => {
+      if (nextViewMode === "phase2_role_select") {
+        void loadAllPhase2();
+        return;
+      }
+      setPhase2Panel({ kind: "hidden" });
+    },
+    [loadAllPhase2]
+  );
 
   const phase1Open = currentStatus === "phase1_open";
   const phase1Closed =
@@ -100,7 +163,7 @@ export function LiveClient({
       : viewMode;
 
   const phase2PanelView: Phase2PanelState =
-    phase2Active && phase2Panel.kind === "hidden" ? { kind: "role_list" } : phase2Panel;
+    phase2Active && phase2Panel.kind === "hidden" ? { kind: "loaded", roles: [] } : phase2Panel;
 
   const loadCurrent = useCallback(async (candidateId?: string | null) => {
     if (!candidateId) {
@@ -186,11 +249,16 @@ export function LiveClient({
           const next = payload.new as { status?: string };
           if (next?.status) {
             setCurrentStatus(next.status);
+            if (next.status === "phase2_open" || next.status === "phase2_closed") {
+              void loadAllPhase2();
+            } else {
+              setPhase2Panel({ kind: "hidden" });
+            }
           }
         }
       )
       .subscribe();
-  }, [sessionId, supabase, applyViewMode, loadCurrent, ensureRealtimeAuth]);
+  }, [sessionId, supabase, applyViewMode, loadCurrent, ensureRealtimeAuth, loadAllPhase2]);
 
   const refreshState = useCallback(async () => {
     const { data: nextSync } = await supabase
@@ -211,8 +279,13 @@ export function LiveClient({
       .maybeSingle();
     if (nextSession?.status) {
       setCurrentStatus(nextSession.status);
+      if (nextSession.status === "phase2_open" || nextSession.status === "phase2_closed") {
+        void loadAllPhase2();
+      } else {
+        setPhase2Panel({ kind: "hidden" });
+      }
     }
-  }, [sessionId, supabase, applyViewMode, loadCurrent]);
+  }, [sessionId, supabase, applyViewMode, loadCurrent, loadAllPhase2]);
 
   useEffect(() => {
     void subscribeChannels();
@@ -243,62 +316,6 @@ export function LiveClient({
     };
   }, [refreshState, subscribeChannels]);
 
-  const loadPhase2 = useCallback(
-    async (roleId: string) => {
-      setPhase2Panel({ kind: "loading", roleId });
-      const { data: role } = await supabase
-        .from("roles")
-        .select("id, name, quota")
-        .eq("id", roleId)
-        .maybeSingle();
-
-      if (!role) {
-        setPhase2Panel({ kind: "role_list" });
-        return;
-      }
-
-      const { data: candidates } = await supabase
-        .from("candidates")
-      .select("id, name")
-      .eq("role_id", roleId)
-      .eq("advanced_to_phase2", true)
-      .order("name", { ascending: true });
-
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      const { data: ballot } = user
-        ? await supabase
-            .from("phase2_ballots")
-            .select("id, submitted")
-            .eq("session_id", sessionId)
-            .eq("role_id", roleId)
-            .eq("user_id", user.id)
-            .maybeSingle()
-        : { data: null };
-
-      const { data: selections } = ballot
-        ? await supabase
-            .from("phase2_selections")
-            .select("candidate_id")
-            .eq("ballot_id", ballot.id)
-        : { data: [] };
-
-      setPhase2Panel({
-        kind: "loaded",
-        roleId,
-        roleName: role.name,
-        quota: role.quota,
-        candidates: candidates ?? [],
-        initialSelectedIds: (selections ?? []).map((selection) => selection.candidate_id),
-        initialSubmitted: Boolean(ballot?.submitted),
-        initialBallotId: ballot?.id ?? null,
-      });
-    },
-    [sessionId, supabase]
-  );
-
   const handleVote = async (value: string) => {
     if (!candidate) return;
     setLoadingVote(true);
@@ -324,8 +341,8 @@ export function LiveClient({
   };
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-col gap-3 rounded-lg border bg-card p-6 shadow-sm">
+    <div className="space-y-4">
+      <header className="flex flex-col gap-2 rounded-lg border bg-card p-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
@@ -339,13 +356,12 @@ export function LiveClient({
       </header>
 
       {effectiveViewMode === "candidate_focus" && candidate ? (
-        <Card className="space-y-6 p-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <Card className="space-y-4 p-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h3 className="text-3xl font-semibold">{candidate.name}</h3>
+              <h3 className="text-2xl font-semibold">{candidate.name}</h3>
               <p className="text-sm text-muted-foreground">{candidate.role_name ?? ""}</p>
             </div>
-            {vote ? <Badge>Voted: {voteLabels[vote as keyof typeof voteLabels]}</Badge> : null}
           </div>
           <div className="flex flex-wrap gap-3">
             {Object.entries(voteLabels).map(([value, label]) => (
@@ -369,48 +385,28 @@ export function LiveClient({
 
       {effectiveViewMode === "phase2_role_select" ? (
         phase2PanelView.kind === "loaded" ? (
-          <Phase2Ballot
-            key={phase2PanelView.roleId}
-            sessionId={sessionId}
-            roleId={phase2PanelView.roleId}
-            roleName={phase2PanelView.roleName}
-            quota={phase2PanelView.quota}
-            candidates={phase2PanelView.candidates}
-            initialSelectedIds={phase2PanelView.initialSelectedIds}
-            initialSubmitted={phase2PanelView.initialSubmitted}
-            initialBallotId={phase2PanelView.initialBallotId}
-            sessionStatus={currentStatus}
-            onBack={() => setPhase2Panel({ kind: "role_list" })}
-          />
-        ) : (
-          <Card className="p-6">
-            <h3 className="text-xl font-semibold">Phase 2 ballots</h3>
-            <p className="text-sm text-muted-foreground">
-              Select a role to cast your inclusion votes.
-            </p>
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              {roles.map((role) => (
-                <button
-                  key={role.id}
-                  type="button"
-                  onClick={() => loadPhase2(role.id)}
-                  className="rounded-md border border-border bg-card p-4 text-left text-sm font-medium hover:bg-muted"
-                  disabled={phase2Panel.kind === "loading"}
-                >
-                  {role.name}
-                  <span className="block text-xs text-muted-foreground">Quota: {role.quota}</span>
-                </button>
-              ))}
-            </div>
-            {phase2Panel.kind === "loading" ? (
-              <p className="mt-3 text-sm text-muted-foreground">Loading ballot...</p>
-            ) : null}
-          </Card>
-        )
+          <div className="space-y-4">
+            {phase2PanelView.roles.map((role) => (
+              <Phase2Ballot
+                key={role.roleId}
+                sessionId={sessionId}
+                roleId={role.roleId}
+                roleName={role.roleName}
+                quota={role.quota}
+                candidates={role.candidates}
+                initialSelectedIds={role.initialSelectedIds}
+                initialSubmitted={role.initialSubmitted}
+                initialBallotId={role.initialBallotId}
+                sessionStatus={currentStatus}
+                variant="embedded"
+              />
+            ))}
+          </div>
+        ) : null
       ) : null}
 
       {effectiveViewMode === "role_list" ? (
-        <Card className="p-6">
+        <Card className="p-4">
           <h3 className="text-xl font-semibold">Waiting for facilitator</h3>
           <p className="text-sm text-muted-foreground">
             Stay on this page. The facilitator will advance candidates live.

@@ -58,7 +58,7 @@ export default async function LivePage({ params }: LivePageProps) {
   }
 
   return (
-    <main className="min-h-screen bg-background px-6 py-10">
+    <main className="min-h-screen bg-background px-4 py-6">
       <div className="mx-auto max-w-5xl">
         <LiveClient
           sessionId={sessionId}

@@ -170,8 +170,8 @@ export function ControlPanel({
   };
 
   return (
-    <div className="space-y-8">
-      <header className="flex flex-col gap-4 rounded-lg border bg-card p-6">
+    <div className="space-y-6">
+      <header className="flex flex-col gap-3 rounded-lg border bg-card p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
@@ -195,9 +195,9 @@ export function ControlPanel({
         </div>
       </header>
 
-      <Card className="p-6">
+      <Card className="p-4">
         <h3 className="text-xl font-semibold">Sync controls</h3>
-        <div className="mt-4 flex flex-wrap gap-3">
+        <div className="mt-2 flex flex-wrap gap-2">
           {roles.map((role) => (
             <Button
               key={role.id}
@@ -213,7 +213,7 @@ export function ControlPanel({
             </Button>
           ))}
         </div>
-        <div className="mt-4 flex flex-wrap gap-3">
+        <div className="mt-2 flex flex-wrap gap-2">
           <Button variant="secondary" onClick={goPrev} disabled={loading || currentIndex <= 0}>
             Previous
           </Button>
@@ -225,47 +225,78 @@ export function ControlPanel({
             Next
           </Button>
         </div>
-        <div className="mt-6 grid gap-3 md:grid-cols-2">
-          {roleCandidates.map((candidate) => (
-            <button
-              key={candidate.id}
-              onClick={() => updateSync(candidate.id, selectedRoleId)}
-              className={`rounded-md border border-border p-4 text-left text-sm font-medium transition ${
-                currentCandidateId === candidate.id
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-card hover:bg-muted"
-              }`}
-            >
-              {candidate.name}
-            </button>
-          ))}
+        <div className="mt-3 overflow-hidden rounded-md border">
+          <ul className="divide-y text-sm">
+            {roleCandidates.map((candidate) => (
+              <li key={candidate.id}>
+                <button
+                  type="button"
+                  onClick={() => updateSync(candidate.id, selectedRoleId)}
+                  className={`flex w-full items-center justify-between px-4 py-2 text-left font-medium transition ${
+                    currentCandidateId === candidate.id
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-card hover:bg-muted"
+                  }`}
+                >
+                  {candidate.name}
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       </Card>
 
-      <Card className="p-6">
+      <Card className="p-4">
         <h3 className="text-xl font-semibold">Phase 1 aggregates</h3>
-        <Table className="mt-4">
+        <Table className="mt-4 text-sm">
           <TableHeader>
             <TableRow>
-              <TableHead>Candidate</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Strong Yes</TableHead>
-              <TableHead>Yes</TableHead>
-              <TableHead>No</TableHead>
-              <TableHead>% Yes</TableHead>
-              <TableHead>Advance</TableHead>
+              <TableHead className="py-2">Candidate</TableHead>
+              <TableHead className="py-2">Role</TableHead>
+              <TableHead className="py-2">Strong Yes</TableHead>
+              <TableHead className="py-2">Yes</TableHead>
+              <TableHead className="py-2">No</TableHead>
+              <TableHead className="py-2">% Yes</TableHead>
+              <TableHead className="py-2">Mix</TableHead>
+              <TableHead className="py-2">Advance</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {phase1Rows.map((row) => (
               <TableRow key={row.candidateId}>
-                <TableCell>{row.candidateName}</TableCell>
-                <TableCell>{row.roleName}</TableCell>
-                <TableCell>{row.strongYes}</TableCell>
-                <TableCell>{row.yes}</TableCell>
-                <TableCell>{row.no}</TableCell>
-                <TableCell>{row.percentYes.toFixed(0)}%</TableCell>
-                <TableCell>
+                <TableCell className="py-2">{row.candidateName}</TableCell>
+                <TableCell className="py-2">{row.roleName}</TableCell>
+                <TableCell className="py-2">{row.strongYes}</TableCell>
+                <TableCell className="py-2">{row.yes}</TableCell>
+                <TableCell className="py-2">{row.no}</TableCell>
+                <TableCell className="py-2">{row.percentYes.toFixed(0)}%</TableCell>
+                <TableCell className="py-2">
+                  {(() => {
+                    const total = row.strongYes + row.yes + row.no;
+                    if (total === 0) {
+                      return (
+                        <div
+                          className="flex overflow-hidden rounded-full bg-muted/60"
+                          style={{ width: 96, height: 8 }}
+                        />
+                      );
+                    }
+                    const strongPct = (row.strongYes / total) * 100;
+                    const yesPct = (row.yes / total) * 100;
+                    const noPct = (row.no / total) * 100;
+                    return (
+                      <div
+                        className="flex overflow-hidden rounded-full bg-muted/60"
+                        style={{ width: 96, height: 8 }}
+                      >
+                        <div className="h-full bg-emerald-700" style={{ width: `${strongPct}%` }} />
+                        <div className="h-full bg-emerald-500" style={{ width: `${yesPct}%` }} />
+                        <div className="h-full bg-destructive" style={{ width: `${noPct}%` }} />
+                      </div>
+                    );
+                  })()}
+                </TableCell>
+                <TableCell className="py-2">
                   <Button
                     variant={row.advancedToPhase2 ? "default" : "secondary"}
                     size="sm"
@@ -280,13 +311,17 @@ export function ControlPanel({
         </Table>
       </Card>
 
-      <Card className="p-6">
+      <Card className="p-4">
         <h3 className="text-xl font-semibold">Phase 2 results</h3>
         <div className="mt-4 grid gap-6">
           {roles.map((role) => {
             const results = phase2Results
               .filter((row) => row.roleId === role.id)
               .sort((a, b) => b.inclusionVotes - a.inclusionVotes);
+            const maxVotes = Math.max(
+              1,
+              ...results.map((row) => row.inclusionVotes)
+            );
             const submission = submissionCounts.find((row) => row.roleId === role.id);
 
             return (
@@ -294,26 +329,37 @@ export function ControlPanel({
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h4 className="text-lg font-semibold">{role.name}</h4>
                   {submission ? (
-                    <Badge>
+                    <Badge variant="secondary">
                       {submission.submittedCount}/{submission.totalCount} submitted
                     </Badge>
                   ) : null}
                 </div>
                 <div className="space-y-2">
-                  {results.map((row, index) => (
+                  {results.map((row, index) => {
+                    const ratio = row.inclusionVotes / maxVotes;
+                    const hue = 120 * ratio;
+                    const fill = `hsl(${hue} 70% 88%)`;
+                    const border = `hsl(${hue} 55% 55%)`;
+                    const text = `hsl(${hue} 45% 22%)`;
+                    return (
                     <div key={row.candidateId} className="flex items-center gap-3">
                       <span className="w-6 text-xs text-muted-foreground">{index + 1}</span>
                       <div className="flex-1 rounded-full bg-muted">
                         <div
-                          className="rounded-full bg-primary px-3 py-2 text-xs font-medium text-primary-foreground"
-                          style={{ width: `${Math.max(10, row.inclusionVotes * 6)}px` }}
+                          className="rounded-full px-3 py-2 text-xs font-medium"
+                          style={{
+                            width: `${Math.max(5, (row.inclusionVotes / maxVotes) * 100)}%`,
+                            background: fill,
+                            border: `1px solid ${border}`,
+                            color: text,
+                          }}
                         >
                           {row.candidateName}
                         </div>
                       </div>
-                      <Badge>{row.inclusionVotes}</Badge>
+                      <Badge variant="secondary">{row.inclusionVotes}</Badge>
                     </div>
-                  ))}
+                  );})}
                 </div>
               </div>
             );

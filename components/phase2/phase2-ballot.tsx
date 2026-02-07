@@ -6,7 +6,6 @@ import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
 import type { Candidate } from "@/lib/db/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 
@@ -23,6 +22,7 @@ interface Phase2BallotProps {
   initialBallotId: string | null;
   sessionStatus: string;
   onBack?: () => void;
+  variant?: "standalone" | "embedded";
 }
 
 export function Phase2Ballot({
@@ -36,6 +36,7 @@ export function Phase2Ballot({
   initialBallotId,
   sessionStatus,
   onBack,
+  variant = "standalone",
 }: Phase2BallotProps) {
   const supabase = useMemo(() => createBrowserSupabaseClient(), []);
   const [selectedIds, setSelectedIds] = useState<string[]>(initialSelectedIds);
@@ -120,69 +121,107 @@ export function Phase2Ballot({
     setSaving(false);
   };
 
+  const showStandaloneHeader = variant === "standalone";
+  const showBackLink = showStandaloneHeader && onBack;
+  const backHref = `/session/${sessionId}/live`;
+
   return (
-    <div className="space-y-6">
-      <header className="flex flex-col gap-3 rounded-lg border bg-card p-6">
-        {onBack ? (
-          <button
-            type="button"
-            onClick={onBack}
-            className="text-left text-xs uppercase tracking-[0.2em] text-muted-foreground"
-          >
-            Back to roles
-          </button>
-        ) : (
-          <Link
-            className="text-xs uppercase tracking-[0.2em] text-muted-foreground"
-            href={`/session/${sessionId}/live`}
-          >
-            Back to live
-          </Link>
-        )}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-2xl font-semibold">{roleName} ballot</h2>
-            <p className="text-sm text-muted-foreground">Select up to {quota} candidates.</p>
+    <div className={variant === "standalone" ? "space-y-4" : "space-y-3"}>
+      {showStandaloneHeader ? (
+        <header className="flex flex-col gap-2 rounded-lg border bg-card p-4">
+          {showBackLink ? (
+            <button
+              type="button"
+              onClick={onBack}
+              className="text-left text-xs uppercase tracking-[0.2em] text-muted-foreground"
+            >
+              Back to roles
+            </button>
+          ) : (
+            <Link
+              className="text-xs uppercase tracking-[0.2em] text-muted-foreground"
+              href={backHref}
+            >
+              Back to live
+            </Link>
+          )}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-semibold">{roleName} ballot</h2>
+              <p className="text-sm text-muted-foreground">Select up to {quota} candidates.</p>
+            </div>
+            <Badge>{selectedIds.length} selected</Badge>
           </div>
-          <Badge>{selectedIds.length} selected</Badge>
+        </header>
+      ) : (
+        <div className="overflow-hidden rounded-lg border bg-card">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-4">
+            <div>
+              <h3 className="text-base font-semibold">{roleName}</h3>
+              <p className="text-xs text-muted-foreground">Quota: {quota}</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <Badge variant="secondary" className="text-xs">
+                {selectedIds.length} selected
+              </Badge>
+              <Button size="sm" onClick={handleSubmit} disabled={saving || !phase2Open}>
+                {submitted ? "Unsubmit" : "Submit"}
+              </Button>
+            </div>
+          </div>
+          <ul className="divide-y border-t border-border text-sm">
+            {candidates.map((candidate) => {
+              const checked = selectedIds.includes(candidate.id);
+              const disabled = !checked && selectedIds.length >= quota;
+              const rowDisabled = disabled || saving || !phase2Open;
+              return (
+                <li
+                  key={candidate.id}
+                  className={`${rowDisabled ? "opacity-70" : "hover:bg-muted"}`}
+                >
+                  <div
+                    role="button"
+                    tabIndex={rowDisabled ? -1 : 0}
+                    className="flex w-full items-center justify-between gap-3 px-5 py-3 text-left"
+                    onClick={() => toggleCandidate(candidate.id)}
+                    onKeyDown={(event) => {
+                      if (rowDisabled) return;
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        toggleCandidate(candidate.id);
+                      }
+                    }}
+                  >
+                    <span className="font-medium">{candidate.name}</span>
+                    <div className="flex items-center gap-2" onClick={(event) => event.stopPropagation()}>
+                      <Checkbox
+                        id={`candidate-${candidate.id}`}
+                        checked={checked}
+                        disabled={rowDisabled}
+                        onCheckedChange={() => toggleCandidate(candidate.id)}
+                      />
+                      <Label htmlFor={`candidate-${candidate.id}`} className="sr-only">
+                        Select {candidate.name}
+                      </Label>
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
         </div>
-      </header>
+      )}
 
-      <div className="grid gap-4 md:grid-cols-2">
-        {candidates.map((candidate) => {
-          const checked = selectedIds.includes(candidate.id);
-          const disabled = !checked && selectedIds.length >= quota;
-          return (
-            <Card key={candidate.id} className={`p-4 ${disabled ? "opacity-70" : ""}`}>
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h3 className="text-lg font-semibold">{candidate.name}</h3>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id={`candidate-${candidate.id}`}
-                    checked={checked}
-                    disabled={disabled || saving || !phase2Open}
-                    onCheckedChange={() => toggleCandidate(candidate.id)}
-                  />
-                  <Label htmlFor={`candidate-${candidate.id}`} className="sr-only">
-                    Select {candidate.name}
-                  </Label>
-                </div>
-              </div>
-            </Card>
-          );
-        })}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-3">
-        <Button onClick={handleSubmit} disabled={saving || !phase2Open}>
-          {submitted ? "Unsubmit" : "Submit ballot"}
-        </Button>
-        <p className="text-sm text-muted-foreground">
-          {submitted ? "Submitted" : "Not submitted"}
-        </p>
-      </div>
+      {variant === "standalone" ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button onClick={handleSubmit} disabled={saving || !phase2Open}>
+            {submitted ? "Unsubmit" : "Submit ballot"}
+          </Button>
+          <p className="text-sm text-muted-foreground">
+            {submitted ? "Submitted" : "Not submitted"}
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }

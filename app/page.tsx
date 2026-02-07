@@ -35,9 +35,9 @@ export default async function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-background px-6 py-12">
-      <div className="mx-auto flex max-w-6xl flex-col gap-8">
-        <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <main className="min-h-screen bg-background px-4 py-6">
+      <div className="mx-auto flex max-w-6xl flex-col gap-6">
+        <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-2">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
               WDB Deliberations
@@ -55,14 +55,14 @@ export default async function Home() {
           </div>
         </header>
 
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2">
           {(sessions ?? []).map((session) => (
             <Card key={session.id} className="flex flex-col justify-between">
-              <CardHeader>
+              <CardHeader className="pb-2">
                 <CardTitle>{session.name}</CardTitle>
                 <CardDescription>Session status: {session.status}</CardDescription>
               </CardHeader>
-              <CardContent className="flex flex-wrap gap-3">
+              <CardContent className="flex flex-wrap gap-2 pt-0">
                 <Link
                   className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
                   href={`/session/${session.id}/live`}
