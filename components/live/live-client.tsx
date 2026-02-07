@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
 import type { Candidate, Role, SyncState } from "@/lib/db/types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
@@ -123,10 +124,6 @@ export function LiveClient({
     }
   }, [sessionId, supabase]);
 
-  useEffect(() => {
-    loadCurrent(syncState?.current_candidate_id);
-  }, [syncState?.current_candidate_id, loadCurrent]);
-
   const subscribeChannels = useCallback(() => {
     if (syncChannelRef.current) {
       supabase.removeChannel(syncChannelRef.current);
@@ -149,6 +146,7 @@ export function LiveClient({
           const nextSync = payload.new as SyncState;
           setSyncState(nextSync);
           applyViewMode(nextSync.view_mode);
+          loadCurrent(nextSync.current_candidate_id);
           if (nextSync.current_candidate_id) {
             setToast("Now viewing a new candidate.");
             setTimeout(() => setToast(null), 2000);
@@ -175,7 +173,7 @@ export function LiveClient({
         }
       )
       .subscribe();
-  }, [sessionId, supabase, applyViewMode]);
+  }, [sessionId, supabase, applyViewMode, loadCurrent]);
 
   const refreshState = useCallback(async () => {
     const { data: nextSync } = await supabase
@@ -186,6 +184,7 @@ export function LiveClient({
     if (nextSync) {
       setSyncState(nextSync);
       applyViewMode(nextSync.view_mode);
+      loadCurrent(nextSync.current_candidate_id);
     }
 
     const { data: nextSession } = await supabase
@@ -196,7 +195,7 @@ export function LiveClient({
     if (nextSession?.status) {
       setCurrentStatus(nextSession.status);
     }
-  }, [sessionId, supabase, applyViewMode]);
+  }, [sessionId, supabase, applyViewMode, loadCurrent]);
 
   useEffect(() => {
     subscribeChannels();
@@ -342,11 +341,14 @@ export function LiveClient({
             </div>
           </div>
           {candidate.photo_url ? (
-            <img
-              src={candidate.photo_url}
-              alt={candidate.name}
-              className="h-48 w-48 rounded-3xl object-cover"
-            />
+          <Image
+            src={candidate.photo_url}
+            alt={candidate.name}
+            width={192}
+            height={192}
+            className="h-48 w-48 rounded-3xl object-cover"
+            unoptimized
+          />
           ) : null}
           <div className="flex flex-wrap gap-3">
             {Object.entries(voteLabels).map(([value, label]) => (

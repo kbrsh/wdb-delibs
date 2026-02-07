@@ -29,7 +29,7 @@ export default async function LivePage({ params }: LivePageProps) {
 
   const { data: roles } = await supabase
     .from("roles")
-    .select("id, name, quota, sort_order")
+    .select("id, name, quota, sort_order, session_id")
     .eq("session_id", sessionId)
     .order("sort_order", { ascending: true });
 

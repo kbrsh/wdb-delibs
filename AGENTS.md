@@ -57,8 +57,7 @@ alter publication supabase_realtime add table public.deliberation_sessions;
 ## Pages
 - `/login` – login screen.
 - `/` – session list (auto-redirect by role if only one session).
-- `/session/[sessionId]/live` – voter live screen (sync + phase 1 voting).
-- `/session/[sessionId]/phase2/[roleId]` – phase 2 ballot UI.
+- `/session/[sessionId]/live` – voter live screen (sync + phase 1 voting + inline phase 2 ballot).
 - `/session/[sessionId]/control` – admin/facilitator controls.
 - `/session/[sessionId]/dashboard` – screenshare dashboard.
 
@@ -89,7 +88,6 @@ npx shadcn@latest add table
   - `app/login/page.tsx`
   - `app/page.tsx`
   - `app/session/[sessionId]/live/page.tsx`
-  - `app/session/[sessionId]/phase2/[roleId]/page.tsx`
   - `app/session/[sessionId]/control/page.tsx`
   - `app/session/[sessionId]/dashboard/page.tsx`
 - Components:
@@ -107,4 +105,3 @@ npx shadcn@latest add table
 2. Ensure your user exists in `user_profiles` and is `admin` (magic-link users may need manual insert).
 3. Enable Realtime for `sync_state` and `deliberation_sessions`.
 4. Add candidates + roles for a session.
-
