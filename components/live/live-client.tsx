@@ -72,6 +72,14 @@ export function LiveClient({
 
   const viewMode = syncState?.view_mode ?? "role_list";
 
+  const ensureRealtimeAuth = useCallback(async () => {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (token) {
+      supabase.realtime.setAuth(token);
+    }
+  }, [supabase]);
+
   const applyViewMode = useCallback((nextViewMode?: string | null) => {
     if (nextViewMode === "phase2_role_select") {
       setPhase2Panel((prev) => (prev.kind === "hidden" ? { kind: "role_list" } : prev));
@@ -124,7 +132,8 @@ export function LiveClient({
     }
   }, [sessionId, supabase]);
 
-  const subscribeChannels = useCallback(() => {
+  const subscribeChannels = useCallback(async () => {
+    await ensureRealtimeAuth();
     if (syncChannelRef.current) {
       supabase.removeChannel(syncChannelRef.current);
     }
@@ -173,7 +182,7 @@ export function LiveClient({
         }
       )
       .subscribe();
-  }, [sessionId, supabase, applyViewMode, loadCurrent]);
+  }, [sessionId, supabase, applyViewMode, loadCurrent, ensureRealtimeAuth]);
 
   const refreshState = useCallback(async () => {
     const { data: nextSync } = await supabase
@@ -198,7 +207,7 @@ export function LiveClient({
   }, [sessionId, supabase, applyViewMode, loadCurrent]);
 
   useEffect(() => {
-    subscribeChannels();
+    void subscribeChannels();
     return () => {
       if (syncChannelRef.current) {
         supabase.removeChannel(syncChannelRef.current);
@@ -213,7 +222,7 @@ export function LiveClient({
     const handleResume = () => {
       if (document.visibilityState === "visible") {
         refreshState();
-        subscribeChannels();
+        void subscribeChannels();
       }
     };
 
