@@ -6,7 +6,7 @@ import type { Candidate, Role, SyncState } from "@/lib/db/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 interface Phase1Aggregate {
   candidateId: string;
@@ -82,6 +82,7 @@ export function ControlPanel({
   );
   const [status, setStatus] = useState(sessionStatus);
   const [loading, setLoading] = useState(false);
+  const [phase1Rows, setPhase1Rows] = useState(phase1Aggregates);
 
   const roleCandidates = candidates
     .filter((candidate) => candidate.role_id === selectedRoleId)
@@ -165,6 +166,9 @@ export function ControlPanel({
       .from("candidates")
       .update({ admin_bucket: bucket })
       .eq("id", candidateId);
+    setPhase1Rows((rows) =>
+      rows.map((row) => (row.candidateId === candidateId ? { ...row, adminBucket: bucket } : row))
+    );
     setLoading(false);
   };
 
@@ -174,6 +178,11 @@ export function ControlPanel({
       .from("candidates")
       .update({ advanced_to_phase2: next })
       .eq("id", candidateId);
+    setPhase1Rows((rows) =>
+      rows.map((row) =>
+        row.candidateId === candidateId ? { ...row, advancedToPhase2: next } : row
+      )
+    );
     setLoading(false);
   };
 
@@ -193,7 +202,7 @@ export function ControlPanel({
           {statusOptions.map((option) => (
             <Button
               key={option}
-              variant={status === option ? "primary" : "secondary"}
+              variant={status === option ? "default" : "secondary"}
               onClick={() => updateStatus(option)}
               disabled={loading}
             >
@@ -203,13 +212,13 @@ export function ControlPanel({
         </div>
       </header>
 
-      <Card>
+      <Card className="p-6">
         <h3 className="text-xl font-semibold">Sync controls</h3>
         <div className="mt-4 flex flex-wrap gap-3">
           {roles.map((role) => (
             <Button
               key={role.id}
-              variant={selectedRoleId === role.id ? "primary" : "secondary"}
+              variant={selectedRoleId === role.id ? "default" : "secondary"}
               onClick={() => {
                 setSelectedRoleId(role.id);
                 setCurrentCandidateId("");
@@ -250,24 +259,24 @@ export function ControlPanel({
         </div>
       </Card>
 
-      <Card>
+      <Card className="p-6">
         <h3 className="text-xl font-semibold">Phase 1 aggregates</h3>
         <Table className="mt-4">
-          <TableHead>
+          <TableHeader>
             <TableRow>
-              <TableHeaderCell>Candidate</TableHeaderCell>
-              <TableHeaderCell>Role</TableHeaderCell>
-              <TableHeaderCell>Strong Yes</TableHeaderCell>
-              <TableHeaderCell>Yes</TableHeaderCell>
-              <TableHeaderCell>No</TableHeaderCell>
-              <TableHeaderCell>% Yes</TableHeaderCell>
-              <TableHeaderCell>Net</TableHeaderCell>
-              <TableHeaderCell>Bucket</TableHeaderCell>
-              <TableHeaderCell>Advance</TableHeaderCell>
+              <TableHead>Candidate</TableHead>
+              <TableHead>Role</TableHead>
+              <TableHead>Strong Yes</TableHead>
+              <TableHead>Yes</TableHead>
+              <TableHead>No</TableHead>
+              <TableHead>% Yes</TableHead>
+              <TableHead>Net</TableHead>
+              <TableHead>Bucket</TableHead>
+              <TableHead>Advance</TableHead>
             </TableRow>
-          </TableHead>
+          </TableHeader>
           <TableBody>
-            {phase1Aggregates.map((row) => (
+            {phase1Rows.map((row) => (
               <TableRow key={row.candidateId}>
                 <TableCell>{row.candidateName}</TableCell>
                 <TableCell>{row.roleName}</TableCell>
@@ -295,7 +304,7 @@ export function ControlPanel({
                 </TableCell>
                 <TableCell>
                   <Button
-                    variant={row.advancedToPhase2 ? "primary" : "secondary"}
+                    variant={row.advancedToPhase2 ? "default" : "secondary"}
                     size="sm"
                     onClick={() => toggleAdvance(row.candidateId, !row.advancedToPhase2)}
                   >
@@ -308,7 +317,7 @@ export function ControlPanel({
         </Table>
       </Card>
 
-      <Card>
+      <Card className="p-6">
         <h3 className="text-xl font-semibold">Phase 2 results</h3>
         <div className="mt-4 grid gap-6">
           {roles.map((role) => {

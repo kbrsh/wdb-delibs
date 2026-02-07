@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 
 type CandidateBallot = Pick<Candidate, "id" | "name" | "airtable_url" | "photo_url">;
 
@@ -21,6 +22,7 @@ interface Phase2BallotProps {
   initialSubmitted: boolean;
   initialBallotId: string | null;
   sessionStatus: string;
+  onBack?: () => void;
 }
 
 export function Phase2Ballot({
@@ -33,6 +35,7 @@ export function Phase2Ballot({
   initialSubmitted,
   initialBallotId,
   sessionStatus,
+  onBack,
 }: Phase2BallotProps) {
   const supabase = useMemo(() => createBrowserSupabaseClient(), []);
   const [selectedIds, setSelectedIds] = useState<string[]>(initialSelectedIds);
@@ -120,9 +123,22 @@ export function Phase2Ballot({
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-3 rounded-lg border bg-card p-6">
-        <Link className="text-xs uppercase tracking-[0.2em] text-muted-foreground" href={`/session/${sessionId}/live`}>
-          Back to live
-        </Link>
+        {onBack ? (
+          <button
+            type="button"
+            onClick={onBack}
+            className="text-left text-xs uppercase tracking-[0.2em] text-muted-foreground"
+          >
+            Back to roles
+          </button>
+        ) : (
+          <Link
+            className="text-xs uppercase tracking-[0.2em] text-muted-foreground"
+            href={`/session/${sessionId}/live`}
+          >
+            Back to live
+          </Link>
+        )}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-2xl font-semibold">{roleName} ballot</h2>
@@ -137,7 +153,7 @@ export function Phase2Ballot({
           const checked = selectedIds.includes(candidate.id);
           const disabled = !checked && selectedIds.length >= quota;
           return (
-            <Card key={candidate.id} className={disabled ? "opacity-70" : ""}>
+            <Card key={candidate.id} className={`p-4 ${disabled ? "opacity-70" : ""}`}>
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h3 className="text-lg font-semibold">{candidate.name}</h3>
@@ -150,11 +166,17 @@ export function Phase2Ballot({
                     Open Airtable
                   </a>
                 </div>
-                <Checkbox
-                  checked={checked}
-                  disabled={disabled || saving}
-                  onChange={() => toggleCandidate(candidate.id)}
-                />
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id={`candidate-${candidate.id}`}
+                    checked={checked}
+                    disabled={disabled || saving || !phase2Open}
+                    onCheckedChange={() => toggleCandidate(candidate.id)}
+                  />
+                  <Label htmlFor={`candidate-${candidate.id}`} className="sr-only">
+                    Select {candidate.name}
+                  </Label>
+                </div>
               </div>
             </Card>
           );

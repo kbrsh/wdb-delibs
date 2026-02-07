@@ -105,12 +105,33 @@ using (user_id = auth.uid() or is_admin_or_facilitator());
 
 create policy "Phase2 ballots write own" on phase2_ballots
 for insert
-with check (user_id = auth.uid());
+with check (
+  user_id = auth.uid()
+  and exists (
+    select 1 from deliberation_sessions
+    where deliberation_sessions.id = phase2_ballots.session_id
+      and deliberation_sessions.status = 'phase2_open'
+  )
+);
 
 create policy "Phase2 ballots update own" on phase2_ballots
 for update
-using (user_id = auth.uid())
-with check (user_id = auth.uid());
+using (
+  user_id = auth.uid()
+  and exists (
+    select 1 from deliberation_sessions
+    where deliberation_sessions.id = phase2_ballots.session_id
+      and deliberation_sessions.status = 'phase2_open'
+  )
+)
+with check (
+  user_id = auth.uid()
+  and exists (
+    select 1 from deliberation_sessions
+    where deliberation_sessions.id = phase2_ballots.session_id
+      and deliberation_sessions.status = 'phase2_open'
+  )
+);
 
 create policy "Phase2 selections read own" on phase2_selections
 for select
@@ -127,8 +148,10 @@ for insert
 with check (
   exists (
     select 1 from phase2_ballots
+    join deliberation_sessions on deliberation_sessions.id = phase2_ballots.session_id
     where phase2_ballots.id = phase2_selections.ballot_id
       and phase2_ballots.user_id = auth.uid()
+      and deliberation_sessions.status = 'phase2_open'
   )
 );
 
@@ -137,8 +160,10 @@ for delete
 using (
   exists (
     select 1 from phase2_ballots
+    join deliberation_sessions on deliberation_sessions.id = phase2_ballots.session_id
     where phase2_ballots.id = phase2_selections.ballot_id
       and phase2_ballots.user_id = auth.uid()
+      and deliberation_sessions.status = 'phase2_open'
   )
 );
 

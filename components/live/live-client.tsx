@@ -1,17 +1,35 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
 import type { Candidate, Role, SyncState } from "@/lib/db/types";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { Phase2Ballot } from "@/components/phase2/phase2-ballot";
 
 type CandidatePreview = Pick<
   Candidate,
   "id" | "name" | "photo_url" | "airtable_url" | "role_id" | "admin_bucket" | "advanced_to_phase2"
 >;
+
+type Phase2Candidate = Pick<Candidate, "id" | "name" | "airtable_url" | "photo_url">;
+
+type Phase2PanelState =
+  | { kind: "hidden" }
+  | { kind: "role_list" }
+  | { kind: "loading"; roleId: string }
+  | {
+      kind: "loaded";
+      roleId: string;
+      roleName: string;
+      quota: number;
+      candidates: Phase2Candidate[];
+      initialSelectedIds: string[];
+      initialSubmitted: boolean;
+      initialBallotId: string | null;
+    };
 
 interface LiveClientProps {
   sessionId: string;
@@ -37,6 +55,8 @@ export function LiveClient({
   initialCandidate,
 }: LiveClientProps) {
   const supabase = useMemo(() => createBrowserSupabaseClient(), []);
+  const syncChannelRef = useRef<RealtimeChannel | null>(null);
+  const sessionChannelRef = useRef<RealtimeChannel | null>(null);
   const [currentStatus, setCurrentStatus] = useState(sessionStatus);
   const [syncState, setSyncState] = useState<SyncState | null>(initialSync);
   const [candidate, setCandidate] = useState<(CandidatePreview & { role_name?: string }) | null>(
@@ -45,6 +65,19 @@ export function LiveClient({
   const [vote, setVote] = useState<string | null>(null);
   const [loadingVote, setLoadingVote] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [phase2Panel, setPhase2Panel] = useState<Phase2PanelState>(
+    initialSync?.view_mode === "phase2_role_select" ? { kind: "role_list" } : { kind: "hidden" }
+  );
+
+  const viewMode = syncState?.view_mode ?? "role_list";
+
+  const applyViewMode = useCallback((nextViewMode?: string | null) => {
+    if (nextViewMode === "phase2_role_select") {
+      setPhase2Panel((prev) => (prev.kind === "hidden" ? { kind: "role_list" } : prev));
+      return;
+    }
+    setPhase2Panel({ kind: "hidden" });
+  }, []);
 
   const phase1Open = currentStatus === "phase1_open";
   const phase1Closed =
@@ -94,8 +127,15 @@ export function LiveClient({
     loadCurrent(syncState?.current_candidate_id);
   }, [syncState?.current_candidate_id, loadCurrent]);
 
-  useEffect(() => {
-    const channel = supabase
+  const subscribeChannels = useCallback(() => {
+    if (syncChannelRef.current) {
+      supabase.removeChannel(syncChannelRef.current);
+    }
+    if (sessionChannelRef.current) {
+      supabase.removeChannel(sessionChannelRef.current);
+    }
+
+    syncChannelRef.current = supabase
       .channel(`sync-${sessionId}`)
       .on(
         "postgres_changes",
@@ -106,8 +146,10 @@ export function LiveClient({
           filter: `session_id=eq.${sessionId}`,
         },
         (payload) => {
-          setSyncState(payload.new as SyncState);
-          if ((payload.new as SyncState).current_candidate_id) {
+          const nextSync = payload.new as SyncState;
+          setSyncState(nextSync);
+          applyViewMode(nextSync.view_mode);
+          if (nextSync.current_candidate_id) {
             setToast("Now viewing a new candidate.");
             setTimeout(() => setToast(null), 2000);
           }
@@ -115,13 +157,7 @@ export function LiveClient({
       )
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [sessionId, supabase]);
-
-  useEffect(() => {
-    const channel = supabase
+    sessionChannelRef.current = supabase
       .channel(`session-${sessionId}`)
       .on(
         "postgres_changes",
@@ -139,11 +175,113 @@ export function LiveClient({
         }
       )
       .subscribe();
+  }, [sessionId, supabase, applyViewMode]);
+
+  const refreshState = useCallback(async () => {
+    const { data: nextSync } = await supabase
+      .from("sync_state")
+      .select("*")
+      .eq("session_id", sessionId)
+      .maybeSingle();
+    if (nextSync) {
+      setSyncState(nextSync);
+      applyViewMode(nextSync.view_mode);
+    }
+
+    const { data: nextSession } = await supabase
+      .from("deliberation_sessions")
+      .select("status")
+      .eq("id", sessionId)
+      .maybeSingle();
+    if (nextSession?.status) {
+      setCurrentStatus(nextSession.status);
+    }
+  }, [sessionId, supabase, applyViewMode]);
+
+  useEffect(() => {
+    subscribeChannels();
+    return () => {
+      if (syncChannelRef.current) {
+        supabase.removeChannel(syncChannelRef.current);
+      }
+      if (sessionChannelRef.current) {
+        supabase.removeChannel(sessionChannelRef.current);
+      }
+    };
+  }, [subscribeChannels, supabase]);
+
+  useEffect(() => {
+    const handleResume = () => {
+      if (document.visibilityState === "visible") {
+        refreshState();
+        subscribeChannels();
+      }
+    };
+
+    window.addEventListener("focus", handleResume);
+    document.addEventListener("visibilitychange", handleResume);
 
     return () => {
-      supabase.removeChannel(channel);
+      window.removeEventListener("focus", handleResume);
+      document.removeEventListener("visibilitychange", handleResume);
     };
-  }, [sessionId, supabase]);
+  }, [refreshState, subscribeChannels]);
+
+  const loadPhase2 = useCallback(
+    async (roleId: string) => {
+      setPhase2Panel({ kind: "loading", roleId });
+      const { data: role } = await supabase
+        .from("roles")
+        .select("id, name, quota")
+        .eq("id", roleId)
+        .maybeSingle();
+
+      if (!role) {
+        setPhase2Panel({ kind: "role_list" });
+        return;
+      }
+
+      const { data: candidates } = await supabase
+        .from("candidates")
+        .select("id, name, airtable_url, photo_url")
+        .eq("role_id", roleId)
+        .eq("advanced_to_phase2", true)
+        .order("name", { ascending: true });
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      const { data: ballot } = user
+        ? await supabase
+            .from("phase2_ballots")
+            .select("id, submitted")
+            .eq("session_id", sessionId)
+            .eq("role_id", roleId)
+            .eq("user_id", user.id)
+            .maybeSingle()
+        : { data: null };
+
+      const { data: selections } = ballot
+        ? await supabase
+            .from("phase2_selections")
+            .select("candidate_id")
+            .eq("ballot_id", ballot.id)
+        : { data: [] };
+
+      setPhase2Panel({
+        kind: "loaded",
+        roleId,
+        roleName: role.name,
+        quota: role.quota,
+        candidates: candidates ?? [],
+        initialSelectedIds: (selections ?? []).map((selection) => selection.candidate_id),
+        initialSubmitted: Boolean(ballot?.submitted),
+        initialBallotId: ballot?.id ?? null,
+      });
+    },
+    [sessionId, supabase]
+  );
 
   const handleVote = async (value: string) => {
     if (!candidate) return;
@@ -169,8 +307,6 @@ export function LiveClient({
     setLoadingVote(false);
   };
 
-  const viewMode = syncState?.view_mode ?? "role_list";
-
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-3 rounded-lg border bg-card p-6 shadow-sm">
@@ -187,7 +323,7 @@ export function LiveClient({
       </header>
 
       {viewMode === "candidate_focus" && candidate ? (
-        <Card className="space-y-6">
+        <Card className="space-y-6 p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="text-3xl font-semibold">{candidate.name}</h3>
@@ -216,7 +352,7 @@ export function LiveClient({
             {Object.entries(voteLabels).map(([value, label]) => (
               <Button
                 key={value}
-                variant={vote === value ? "primary" : "secondary"}
+                variant={vote === value ? "default" : "secondary"}
                 onClick={() => handleVote(value)}
                 disabled={!phase1Open || loadingVote}
               >
@@ -233,26 +369,49 @@ export function LiveClient({
       ) : null}
 
       {viewMode === "phase2_role_select" ? (
-        <Card>
-          <h3 className="text-xl font-semibold">Phase 2 ballots</h3>
-          <p className="text-sm text-muted-foreground">Select a role to cast your inclusion votes.</p>
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            {roles.map((role) => (
-              <Link
-                key={role.id}
-                href={`/session/${sessionId}/phase2/${role.id}`}
-                className="rounded-md border border-border bg-card p-4 text-sm font-medium hover:bg-muted"
-              >
-                {role.name}
-                <span className="block text-xs text-muted-foreground">Quota: {role.quota}</span>
-              </Link>
-            ))}
-          </div>
-        </Card>
+        phase2Panel.kind === "loaded" ? (
+          <Phase2Ballot
+            key={phase2Panel.roleId}
+            sessionId={sessionId}
+            roleId={phase2Panel.roleId}
+            roleName={phase2Panel.roleName}
+            quota={phase2Panel.quota}
+            candidates={phase2Panel.candidates}
+            initialSelectedIds={phase2Panel.initialSelectedIds}
+            initialSubmitted={phase2Panel.initialSubmitted}
+            initialBallotId={phase2Panel.initialBallotId}
+            sessionStatus={currentStatus}
+            onBack={() => setPhase2Panel({ kind: "role_list" })}
+          />
+        ) : (
+          <Card className="p-6">
+            <h3 className="text-xl font-semibold">Phase 2 ballots</h3>
+            <p className="text-sm text-muted-foreground">
+              Select a role to cast your inclusion votes.
+            </p>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {roles.map((role) => (
+                <button
+                  key={role.id}
+                  type="button"
+                  onClick={() => loadPhase2(role.id)}
+                  className="rounded-md border border-border bg-card p-4 text-left text-sm font-medium hover:bg-muted"
+                  disabled={phase2Panel.kind === "loading"}
+                >
+                  {role.name}
+                  <span className="block text-xs text-muted-foreground">Quota: {role.quota}</span>
+                </button>
+              ))}
+            </div>
+            {phase2Panel.kind === "loading" ? (
+              <p className="mt-3 text-sm text-muted-foreground">Loading ballot...</p>
+            ) : null}
+          </Card>
+        )
       ) : null}
 
       {viewMode === "role_list" ? (
-        <Card>
+        <Card className="p-6">
           <h3 className="text-xl font-semibold">Waiting for facilitator</h3>
           <p className="text-sm text-muted-foreground">
             Stay on this page. The facilitator will advance candidates live.
