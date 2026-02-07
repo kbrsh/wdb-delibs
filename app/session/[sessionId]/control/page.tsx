@@ -45,7 +45,7 @@ export default async function ControlPage({ params }: ControlPageProps) {
 
   const { data: candidates } = await supabase
     .from("candidates")
-    .select("id, name, role_id, slide_order, admin_bucket, advanced_to_phase2")
+    .select("id, name, role_id, slide_order, advanced_to_phase2")
     .eq("session_id", sessionId);
 
   const { data: syncState } = await supabase
@@ -74,7 +74,6 @@ export default async function ControlPage({ params }: ControlPageProps) {
     const counts = voteCounts.get(candidate.id) ?? { strong_yes: 0, yes: 0, no: 0 };
     const total = counts.strong_yes + counts.yes + counts.no || 1;
     const percentYes = ((counts.strong_yes + counts.yes) / total) * 100;
-    const netScore = counts.strong_yes * 2 + counts.yes - counts.no * 2;
     return {
       candidateId: candidate.id,
       candidateName: candidate.name,
@@ -83,9 +82,7 @@ export default async function ControlPage({ params }: ControlPageProps) {
       yes: counts.yes,
       no: counts.no,
       percentYes,
-      netScore,
       advancedToPhase2: candidate.advanced_to_phase2,
-      adminBucket: candidate.admin_bucket,
     };
   });
 

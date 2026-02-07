@@ -11,8 +11,6 @@ create type session_status as enum (
 
 create type app_role as enum ('admin', 'facilitator', 'voter');
 
-create type admin_bucket as enum ('clear_yes', 'borderline', 'no');
-
 create type phase1_vote as enum ('strong_yes', 'yes', 'no');
 
 create type view_mode as enum ('role_list', 'candidate_focus', 'phase2_role_select');
@@ -38,12 +36,9 @@ create table if not exists candidates (
   session_id uuid not null references deliberation_sessions(id) on delete cascade,
   role_id uuid not null references roles(id) on delete cascade,
   name text not null,
-  photo_url text,
-  airtable_url text not null,
   slide_order integer not null default 0,
   is_active boolean not null default true,
   advanced_to_phase2 boolean not null default false,
-  admin_bucket admin_bucket,
   notes text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

@@ -16,9 +16,7 @@ interface Phase1Aggregate {
   yes: number;
   no: number;
   percentYes: number;
-  netScore: number;
   advancedToPhase2: boolean;
-  adminBucket: string | null;
 }
 
 interface Phase2Result {
@@ -50,7 +48,7 @@ interface ControlPanelProps {
 
 type ControlCandidate = Pick<
   Candidate,
-  "id" | "name" | "role_id" | "slide_order" | "admin_bucket" | "advanced_to_phase2"
+  "id" | "name" | "role_id" | "slide_order" | "advanced_to_phase2"
 >;
 
 const statusOptions = [
@@ -121,27 +119,24 @@ export function ControlPanel({
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (nextStatus === "phase2_open") {
-      await supabase.from("sync_state").upsert({
-        session_id: sessionId,
-        current_role_id: selectedRoleId || null,
-        current_candidate_id: null,
-        view_mode: "phase2_role_select",
-        updated_by: user?.id ?? null,
-        updated_at: new Date().toISOString(),
-      });
-    }
+    const isPhase2 = nextStatus === "phase2_open" || nextStatus === "phase2_closed";
+    const isPhase1 = nextStatus === "phase1_open" || nextStatus === "phase1_closed";
+    const nextCandidateId = isPhase2 ? null : isPhase1 ? currentCandidateId || null : null;
+    const nextViewMode = isPhase2
+      ? "phase2_role_select"
+      : nextCandidateId
+        ? "candidate_focus"
+        : "role_list";
 
-    if (nextStatus === "phase1_open") {
-      await supabase.from("sync_state").upsert({
-        session_id: sessionId,
-        current_role_id: selectedRoleId || null,
-        current_candidate_id: null,
-        view_mode: "role_list",
-        updated_by: user?.id ?? null,
-        updated_at: new Date().toISOString(),
-      });
-    }
+    await supabase.from("sync_state").upsert({
+      session_id: sessionId,
+      current_role_id: selectedRoleId || null,
+      current_candidate_id: nextCandidateId,
+      view_mode: nextViewMode,
+      updated_by: user?.id ?? null,
+      updated_at: new Date().toISOString(),
+    });
+    setCurrentCandidateId(nextCandidateId ?? "");
     setStatus(nextStatus);
     setLoading(false);
   };
@@ -158,18 +153,6 @@ export function ControlPanel({
     if (prevCandidate) {
       updateSync(prevCandidate.id, selectedRoleId);
     }
-  };
-
-  const setBucket = async (candidateId: string, bucket: string | null) => {
-    setLoading(true);
-    await supabase
-      .from("candidates")
-      .update({ admin_bucket: bucket })
-      .eq("id", candidateId);
-    setPhase1Rows((rows) =>
-      rows.map((row) => (row.candidateId === candidateId ? { ...row, adminBucket: bucket } : row))
-    );
-    setLoading(false);
   };
 
   const toggleAdvance = async (candidateId: string, next: boolean) => {
@@ -270,8 +253,6 @@ export function ControlPanel({
               <TableHead>Yes</TableHead>
               <TableHead>No</TableHead>
               <TableHead>% Yes</TableHead>
-              <TableHead>Net</TableHead>
-              <TableHead>Bucket</TableHead>
               <TableHead>Advance</TableHead>
             </TableRow>
           </TableHeader>
@@ -284,24 +265,6 @@ export function ControlPanel({
                 <TableCell>{row.yes}</TableCell>
                 <TableCell>{row.no}</TableCell>
                 <TableCell>{row.percentYes.toFixed(0)}%</TableCell>
-                <TableCell>{row.netScore}</TableCell>
-                <TableCell>
-                  <div className="flex flex-wrap gap-2">
-                    {["clear_yes", "borderline", "no", null].map((bucket) => (
-                      <button
-                        key={bucket ?? "none"}
-                        onClick={() => setBucket(row.candidateId, bucket)}
-                        className={`rounded-full border px-3 py-1 text-xs ${
-                          row.adminBucket === bucket
-                            ? "bg-accent text-accent-foreground"
-                            : "bg-card"
-                        }`}
-                      >
-                        {bucket ?? "unset"}
-                      </button>
-                    ))}
-                  </div>
-                </TableCell>
                 <TableCell>
                   <Button
                     variant={row.advancedToPhase2 ? "default" : "secondary"}

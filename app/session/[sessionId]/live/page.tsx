@@ -43,7 +43,7 @@ export default async function LivePage({ params }: LivePageProps) {
   if (syncState?.current_candidate_id) {
     const { data } = await supabase
       .from("candidates")
-      .select("id, name, photo_url, airtable_url, role_id, admin_bucket, advanced_to_phase2")
+      .select("id, name, role_id")
       .eq("id", syncState.current_candidate_id)
       .maybeSingle();
 

@@ -10,7 +10,7 @@ import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 
-type CandidateBallot = Pick<Candidate, "id" | "name" | "airtable_url" | "photo_url">;
+type CandidateBallot = Pick<Candidate, "id" | "name">;
 
 interface Phase2BallotProps {
   sessionId: string;
@@ -157,14 +157,6 @@ export function Phase2Ballot({
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h3 className="text-lg font-semibold">{candidate.name}</h3>
-                  <a
-                    className="text-xs text-muted-foreground underline"
-                    href={candidate.airtable_url}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Open Airtable
-                  </a>
                 </div>
                 <div className="flex items-center gap-2">
                   <Checkbox

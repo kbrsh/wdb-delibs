@@ -44,7 +44,7 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
 
   const { data: candidates } = await supabase
     .from("candidates")
-    .select("id, name, role_id, admin_bucket, advanced_to_phase2")
+    .select("id, name, role_id, advanced_to_phase2")
     .eq("session_id", sessionId);
 
   const { data: votes } = await supabase

@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Image from "next/image";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
 import type { Candidate, Role, SyncState } from "@/lib/db/types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
@@ -12,10 +11,10 @@ import { Phase2Ballot } from "@/components/phase2/phase2-ballot";
 
 type CandidatePreview = Pick<
   Candidate,
-  "id" | "name" | "photo_url" | "airtable_url" | "role_id" | "admin_bucket" | "advanced_to_phase2"
+  "id" | "name" | "role_id"
 >;
 
-type Phase2Candidate = Pick<Candidate, "id" | "name" | "airtable_url" | "photo_url">;
+type Phase2Candidate = Pick<Candidate, "id" | "name">;
 
 type Phase2PanelState =
   | { kind: "hidden" }
@@ -93,6 +92,15 @@ export function LiveClient({
     currentStatus === "phase1_closed" ||
     currentStatus === "phase2_open" ||
     currentStatus === "phase2_closed";
+  const phase2Active = currentStatus === "phase2_open" || currentStatus === "phase2_closed";
+  const effectiveViewMode = phase2Active
+    ? "phase2_role_select"
+    : viewMode === "phase2_role_select"
+      ? "role_list"
+      : viewMode;
+
+  const phase2PanelView: Phase2PanelState =
+    phase2Active && phase2Panel.kind === "hidden" ? { kind: "role_list" } : phase2Panel;
 
   const loadCurrent = useCallback(async (candidateId?: string | null) => {
     if (!candidateId) {
@@ -103,7 +111,7 @@ export function LiveClient({
 
     const { data: candidateData } = await supabase
       .from("candidates")
-      .select("id, name, photo_url, airtable_url, role_id, admin_bucket, advanced_to_phase2")
+      .select("id, name, role_id")
       .eq("id", candidateId)
       .maybeSingle();
 
@@ -251,10 +259,10 @@ export function LiveClient({
 
       const { data: candidates } = await supabase
         .from("candidates")
-        .select("id, name, airtable_url, photo_url")
-        .eq("role_id", roleId)
-        .eq("advanced_to_phase2", true)
-        .order("name", { ascending: true });
+      .select("id, name")
+      .eq("role_id", roleId)
+      .eq("advanced_to_phase2", true)
+      .order("name", { ascending: true });
 
       const {
         data: { user },
@@ -330,35 +338,15 @@ export function LiveClient({
         {toast ? <p className="text-sm text-primary">{toast}</p> : null}
       </header>
 
-      {viewMode === "candidate_focus" && candidate ? (
+      {effectiveViewMode === "candidate_focus" && candidate ? (
         <Card className="space-y-6 p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="text-3xl font-semibold">{candidate.name}</h3>
               <p className="text-sm text-muted-foreground">{candidate.role_name ?? ""}</p>
             </div>
-            <div className="flex gap-3">
-              <a
-                className="rounded-md border border-border px-4 py-2 text-sm font-medium"
-                href={candidate.airtable_url}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Open Airtable
-              </a>
-              {vote ? <Badge>Voted: {voteLabels[vote as keyof typeof voteLabels]}</Badge> : null}
-            </div>
+            {vote ? <Badge>Voted: {voteLabels[vote as keyof typeof voteLabels]}</Badge> : null}
           </div>
-          {candidate.photo_url ? (
-          <Image
-            src={candidate.photo_url}
-            alt={candidate.name}
-            width={192}
-            height={192}
-            className="h-48 w-48 rounded-3xl object-cover"
-            unoptimized
-          />
-          ) : null}
           <div className="flex flex-wrap gap-3">
             {Object.entries(voteLabels).map(([value, label]) => (
               <Button
@@ -379,18 +367,18 @@ export function LiveClient({
         </Card>
       ) : null}
 
-      {viewMode === "phase2_role_select" ? (
-        phase2Panel.kind === "loaded" ? (
+      {effectiveViewMode === "phase2_role_select" ? (
+        phase2PanelView.kind === "loaded" ? (
           <Phase2Ballot
-            key={phase2Panel.roleId}
+            key={phase2PanelView.roleId}
             sessionId={sessionId}
-            roleId={phase2Panel.roleId}
-            roleName={phase2Panel.roleName}
-            quota={phase2Panel.quota}
-            candidates={phase2Panel.candidates}
-            initialSelectedIds={phase2Panel.initialSelectedIds}
-            initialSubmitted={phase2Panel.initialSubmitted}
-            initialBallotId={phase2Panel.initialBallotId}
+            roleId={phase2PanelView.roleId}
+            roleName={phase2PanelView.roleName}
+            quota={phase2PanelView.quota}
+            candidates={phase2PanelView.candidates}
+            initialSelectedIds={phase2PanelView.initialSelectedIds}
+            initialSubmitted={phase2PanelView.initialSubmitted}
+            initialBallotId={phase2PanelView.initialBallotId}
             sessionStatus={currentStatus}
             onBack={() => setPhase2Panel({ kind: "role_list" })}
           />
@@ -421,7 +409,7 @@ export function LiveClient({
         )
       ) : null}
 
-      {viewMode === "role_list" ? (
+      {effectiveViewMode === "role_list" ? (
         <Card className="p-6">
           <h3 className="text-xl font-semibold">Waiting for facilitator</h3>
           <p className="text-sm text-muted-foreground">

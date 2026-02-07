@@ -8,8 +8,6 @@ export type SessionStatus =
 
 export type AppRole = "admin" | "facilitator" | "voter";
 
-export type AdminBucket = "clear_yes" | "borderline" | "no";
-
 export type Phase1Vote = "strong_yes" | "yes" | "no";
 
 export type ViewMode = "role_list" | "candidate_focus" | "phase2_role_select";
@@ -35,12 +33,9 @@ export interface Candidate {
   session_id: string;
   role_id: string;
   name: string;
-  photo_url: string | null;
-  airtable_url: string;
   slide_order: number;
   is_active: boolean;
   advanced_to_phase2: boolean;
-  admin_bucket: AdminBucket | null;
   notes: string | null;
 }
 
