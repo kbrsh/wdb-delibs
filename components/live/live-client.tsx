@@ -164,6 +164,9 @@ export function LiveClient({
 
   const phase2PanelView: Phase2PanelState =
     phase2Active && phase2Panel.kind === "hidden" ? { kind: "loaded", roles: [] } : phase2Panel;
+  const lastCandidateIdRef = useRef<string | null>(initialSync?.current_candidate_id ?? null);
+  const phase2ActiveRef = useRef(phase2Active);
+  phase2ActiveRef.current = phase2Active;
 
   const loadCurrent = useCallback(async (candidateId?: string | null) => {
     if (!candidateId) {
@@ -225,11 +228,18 @@ export function LiveClient({
         (payload) => {
           const nextSync = payload.new as SyncState;
           setSyncState(nextSync);
-          applyViewMode(nextSync.view_mode);
-          loadCurrent(nextSync.current_candidate_id);
-          if (nextSync.current_candidate_id) {
-            setToast("Now viewing a new candidate.");
-            setTimeout(() => setToast(null), 2000);
+          if (!phase2ActiveRef.current) {
+            applyViewMode(nextSync.view_mode);
+            loadCurrent(nextSync.current_candidate_id);
+            if (
+              nextSync.view_mode === "candidate_focus" &&
+              nextSync.current_candidate_id &&
+              nextSync.current_candidate_id !== lastCandidateIdRef.current
+            ) {
+              setToast("Now viewing a new candidate.");
+              setTimeout(() => setToast(null), 2000);
+              lastCandidateIdRef.current = nextSync.current_candidate_id;
+            }
           }
         }
       )
@@ -268,8 +278,10 @@ export function LiveClient({
       .maybeSingle();
     if (nextSync) {
       setSyncState(nextSync);
-      applyViewMode(nextSync.view_mode);
-      loadCurrent(nextSync.current_candidate_id);
+      if (!phase2ActiveRef.current) {
+        applyViewMode(nextSync.view_mode);
+        loadCurrent(nextSync.current_candidate_id);
+      }
     }
 
     const { data: nextSession } = await supabase
@@ -352,7 +364,6 @@ export function LiveClient({
           </div>
           <Badge>{currentStatus.replaceAll("_", " ")}</Badge>
         </div>
-        {toast ? <p className="text-sm text-primary">{toast}</p> : null}
       </header>
 
       {effectiveViewMode === "candidate_focus" && candidate ? (
@@ -423,6 +434,12 @@ export function LiveClient({
             ))}
           </div>
         </Card>
+      ) : null}
+
+      {toast ? (
+        <div className="fixed right-4 top-4 z-50 rounded-md border bg-card px-3 py-2 text-xs font-medium shadow-sm">
+          {toast}
+        </div>
       ) : null}
     </div>
   );
