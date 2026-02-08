@@ -174,9 +174,6 @@ export function ControlPanel({
       <header className="flex flex-col gap-3 rounded-lg border bg-card p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Control room
-            </p>
             <h2 className="text-2xl font-semibold">{sessionName}</h2>
           </div>
           <Badge>{status.replaceAll("_", " ")}</Badge>

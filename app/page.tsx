@@ -39,9 +39,6 @@ export default async function Home() {
       <div className="mx-auto flex max-w-6xl flex-col gap-6">
         <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              WDB Deliberations
-            </p>
             <h1 className="text-3xl font-semibold text-foreground">
               Welcome{profile?.name ? `, ${profile.name}` : ""}.
             </h1>

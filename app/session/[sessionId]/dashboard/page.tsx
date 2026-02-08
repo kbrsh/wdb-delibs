@@ -83,9 +83,6 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
     <main className="min-h-screen bg-background px-4 py-6">
       <div className="mx-auto max-w-6xl space-y-6">
         <header className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-            Dashboard
-          </p>
           <h1 className="text-4xl font-semibold">{session.name}</h1>
           <p className="text-sm text-muted-foreground">Status: {session.status}</p>
         </header>

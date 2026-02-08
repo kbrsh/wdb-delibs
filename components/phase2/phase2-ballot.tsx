@@ -133,13 +133,13 @@ export function Phase2Ballot({
             <button
               type="button"
               onClick={onBack}
-              className="text-left text-xs uppercase tracking-[0.2em] text-muted-foreground"
+              className="text-left text-xs text-muted-foreground"
             >
               Back to roles
             </button>
           ) : (
             <Link
-              className="text-xs uppercase tracking-[0.2em] text-muted-foreground"
+              className="text-xs text-muted-foreground"
               href={backHref}
             >
               Back to live

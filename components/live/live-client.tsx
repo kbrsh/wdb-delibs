@@ -410,9 +410,6 @@ export function LiveClient({
       <header className="flex flex-col gap-2 rounded-lg border bg-card p-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Live session
-            </p>
             <h2 className="text-2xl font-semibold">{sessionName}</h2>
           </div>
           <Badge>{ui.status.replaceAll("_", " ")}</Badge>
