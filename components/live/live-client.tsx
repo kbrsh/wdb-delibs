@@ -333,6 +333,8 @@ export function LiveClient({
           filter: `session_id=eq.${sessionId}`,
         },
         (payload) => {
+          channelStatusRef.current.sync = true;
+          updateConnectionState();
           const nextSync = payload.new as SyncState;
           if (uiRef.current.phase !== "phase1") {
             return;
@@ -384,6 +386,8 @@ export function LiveClient({
           filter: `id=eq.${sessionId}`,
         },
         (payload) => {
+          channelStatusRef.current.session = true;
+          updateConnectionState();
           const next = payload.new as { status?: string };
           if (next?.status) {
             void refreshState();
