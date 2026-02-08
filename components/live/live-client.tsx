@@ -47,6 +47,7 @@ type IdleState = {
 };
 
 type LiveUIState = Phase1State | Phase2State | IdleState;
+type ConnectionState = "connecting" | "connected" | "reconnecting" | "offline";
 
 interface LiveClientProps {
   sessionId: string;
@@ -97,8 +98,15 @@ export function LiveClient({
   });
   const [loadingVote, setLoadingVote] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
   const uiRef = useRef(ui);
   uiRef.current = ui;
+  const channelStatusRef = useRef<{ sync: boolean; session: boolean }>({
+    sync: false,
+    session: false,
+  });
+  const reconnectAttemptRef = useRef(0);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const ensureRealtimeAuth = useCallback(async () => {
     const { data } = await supabase.auth.getSession();
@@ -269,6 +277,54 @@ export function LiveClient({
     setUi({ phase: idle, status: idle });
   }, [sessionId, supabase, loadCurrent, loadAllPhase2]);
 
+  const updateConnectionState = useCallback(() => {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      setConnectionState("offline");
+      return;
+    }
+    const { sync, session } = channelStatusRef.current;
+    if (sync && session) {
+      setConnectionState("connected");
+      return;
+    }
+    setConnectionState((prev) => (prev === "connecting" ? "connecting" : "reconnecting"));
+  }, []);
+
+  const clearReconnectTimer = useCallback(() => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleReconnect = useCallback(() => {
+    if (reconnectTimerRef.current) return;
+    const attempt = reconnectAttemptRef.current;
+    const delay = Math.min(1000 * 2 ** attempt, 10000);
+    reconnectTimerRef.current = setTimeout(() => {
+      reconnectTimerRef.current = null;
+      reconnectAttemptRef.current += 1;
+      void subscribeChannels();
+    }, delay);
+    setConnectionState("reconnecting");
+  }, [subscribeChannels]);
+
+  const handleChannelStatus = useCallback(
+    (key: "sync" | "session", status: string) => {
+      if (status === "SUBSCRIBED") {
+        channelStatusRef.current[key] = true;
+        reconnectAttemptRef.current = 0;
+        clearReconnectTimer();
+      }
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        channelStatusRef.current[key] = false;
+        scheduleReconnect();
+      }
+      updateConnectionState();
+    },
+    [clearReconnectTimer, scheduleReconnect, updateConnectionState]
+  );
+
   const subscribeChannels = useCallback(async () => {
     await ensureRealtimeAuth();
     if (syncChannelRef.current) {
@@ -277,6 +333,9 @@ export function LiveClient({
     if (sessionChannelRef.current) {
       supabase.removeChannel(sessionChannelRef.current);
     }
+
+    channelStatusRef.current = { sync: false, session: false };
+    setConnectionState(typeof navigator !== "undefined" && !navigator.onLine ? "offline" : "connecting");
 
     syncChannelRef.current = supabase
       .channel(`sync-${sessionId}`)
@@ -327,7 +386,7 @@ export function LiveClient({
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => handleChannelStatus("sync", status));
 
     sessionChannelRef.current = supabase
       .channel(`session-${sessionId}`)
@@ -346,8 +405,8 @@ export function LiveClient({
           }
         }
       )
-      .subscribe();
-  }, [sessionId, supabase, loadCurrent, ensureRealtimeAuth, refreshState]);
+      .subscribe((status) => handleChannelStatus("session", status));
+  }, [sessionId, supabase, loadCurrent, ensureRealtimeAuth, refreshState, handleChannelStatus]);
 
   useEffect(() => {
     void subscribeChannels();
@@ -367,13 +426,6 @@ export function LiveClient({
   useEffect(() => {
     const handleResume = () => {
       if (document.visibilityState === "visible") {
-        // Mobile browsers can suspend sockets; force a reconnect + refresh.
-        try {
-          supabase.realtime.disconnect();
-          supabase.realtime.connect();
-        } catch {
-          // Ignore reconnect errors; refresh/subscribe still runs.
-        }
         refreshState();
         void subscribeChannels();
         if (uiRef.current.phase === "phase2") {
@@ -382,21 +434,26 @@ export function LiveClient({
       }
     };
 
+    const handleOffline = () => setConnectionState("offline");
+
     window.addEventListener("focus", handleResume);
     window.addEventListener("pageshow", handleResume);
     window.addEventListener("online", handleResume);
+    window.addEventListener("offline", handleOffline);
     document.addEventListener("visibilitychange", handleResume);
 
     return () => {
       window.removeEventListener("focus", handleResume);
       window.removeEventListener("pageshow", handleResume);
       window.removeEventListener("online", handleResume);
+      window.removeEventListener("offline", handleOffline);
       document.removeEventListener("visibilitychange", handleResume);
     };
-  }, [refreshState, subscribeChannels, supabase, loadAllPhase2]);
+  }, [refreshState, subscribeChannels, loadAllPhase2]);
 
   const handleVote = async (value: string) => {
     if (ui.phase !== "phase1" || !ui.candidate) return;
+    if (connectionState !== "connected") return;
     setLoadingVote(true);
     const {
       data: { user },
@@ -421,6 +478,13 @@ export function LiveClient({
 
   return (
     <div className="space-y-4">
+      {connectionState !== "connected" ? (
+        <div className="rounded-md border bg-muted px-3 py-2 text-xs font-medium text-muted-foreground">
+          {connectionState === "offline"
+            ? "Offline. Reconnecting when network returns..."
+            : "Reconnecting to live updates..."}
+        </div>
+      ) : null}
       <header className="flex flex-col gap-2 rounded-lg border bg-card p-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -440,14 +504,14 @@ export function LiveClient({
           </div>
           <div className="flex flex-wrap gap-3">
             {Object.entries(voteLabels).map(([value, label]) => (
-              <Button
-                key={value}
-                variant={ui.vote === value ? "default" : "secondary"}
-                onClick={() => handleVote(value)}
-                disabled={!phase1Open || loadingVote}
-              >
-                {label}
-              </Button>
+                <Button
+                  key={value}
+                  variant={ui.vote === value ? "default" : "secondary"}
+                  onClick={() => handleVote(value)}
+                  disabled={!phase1Open || loadingVote || connectionState !== "connected"}
+                >
+                  {label}
+                </Button>
             ))}
           </div>
           {phase1Closed ? (
@@ -473,6 +537,7 @@ export function LiveClient({
                 initialBallotId={role.initialBallotId}
                 sessionStatus={ui.status}
                 variant="embedded"
+                disabled={connectionState !== "connected"}
               />
             ))}
         </div>
