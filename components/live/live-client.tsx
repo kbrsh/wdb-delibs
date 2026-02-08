@@ -367,19 +367,33 @@ export function LiveClient({
   useEffect(() => {
     const handleResume = () => {
       if (document.visibilityState === "visible") {
+        // Mobile browsers can suspend sockets; force a reconnect + refresh.
+        try {
+          supabase.realtime.disconnect();
+          supabase.realtime.connect();
+        } catch {
+          // Ignore reconnect errors; refresh/subscribe still runs.
+        }
         refreshState();
         void subscribeChannels();
+        if (uiRef.current.phase === "phase2") {
+          void loadAllPhase2();
+        }
       }
     };
 
     window.addEventListener("focus", handleResume);
+    window.addEventListener("pageshow", handleResume);
+    window.addEventListener("online", handleResume);
     document.addEventListener("visibilitychange", handleResume);
 
     return () => {
       window.removeEventListener("focus", handleResume);
+      window.removeEventListener("pageshow", handleResume);
+      window.removeEventListener("online", handleResume);
       document.removeEventListener("visibilitychange", handleResume);
     };
-  }, [refreshState, subscribeChannels]);
+  }, [refreshState, subscribeChannels, supabase, loadAllPhase2]);
 
   const handleVote = async (value: string) => {
     if (ui.phase !== "phase1" || !ui.candidate) return;
