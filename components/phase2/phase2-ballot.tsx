@@ -23,7 +23,7 @@ interface Phase2BallotProps {
   sessionStatus: string;
   onBack?: () => void;
   variant?: "standalone" | "embedded";
-  disabled?: boolean;
+  ensurePhaseOpen?: () => Promise<boolean>;
 }
 
 export function Phase2Ballot({
@@ -38,7 +38,7 @@ export function Phase2Ballot({
   sessionStatus,
   onBack,
   variant = "standalone",
-  disabled = false,
+  ensurePhaseOpen,
 }: Phase2BallotProps) {
   const supabase = useMemo(() => createBrowserSupabaseClient(), []);
   const [selectedIds, setSelectedIds] = useState<string[]>(initialSelectedIds);
@@ -76,7 +76,8 @@ export function Phase2Ballot({
   };
 
   const toggleCandidate = async (candidateId: string) => {
-    if (!phase2Open || disabled) return;
+    if (!phase2Open) return;
+    if (ensurePhaseOpen && !(await ensurePhaseOpen())) return;
     const currentlySelected = selectedIds.includes(candidateId);
 
     if (!currentlySelected && selectedIds.length >= quota) {
@@ -109,7 +110,8 @@ export function Phase2Ballot({
   };
 
   const handleSubmit = async () => {
-    if (!phase2Open || disabled) return;
+    if (!phase2Open) return;
+    if (ensurePhaseOpen && !(await ensurePhaseOpen())) return;
     const currentBallotId = await ensureBallot();
     if (!currentBallotId) return;
 
@@ -166,7 +168,7 @@ export function Phase2Ballot({
               <Badge variant="secondary" className="text-xs">
                 {selectedIds.length} selected
               </Badge>
-              <Button size="sm" onClick={handleSubmit} disabled={saving || !phase2Open || disabled}>
+              <Button size="sm" onClick={handleSubmit} disabled={saving || !phase2Open}>
                 {submitted ? "Unsubmit" : "Submit"}
               </Button>
             </div>
@@ -175,7 +177,7 @@ export function Phase2Ballot({
             {candidates.map((candidate) => {
               const checked = selectedIds.includes(candidate.id);
               const disabled = !checked && selectedIds.length >= quota;
-              const rowDisabled = disabled || saving || !phase2Open;
+              const rowDisabled = saving || !phase2Open;
               return (
                 <li
                   key={candidate.id}
@@ -216,7 +218,7 @@ export function Phase2Ballot({
 
       {variant === "standalone" ? (
         <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={handleSubmit} disabled={saving || !phase2Open || disabled}>
+          <Button onClick={handleSubmit} disabled={saving || !phase2Open}>
             {submitted ? "Unsubmit" : "Submit ballot"}
           </Button>
           <p className="text-sm text-muted-foreground">
