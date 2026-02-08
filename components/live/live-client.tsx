@@ -297,33 +297,18 @@ export function LiveClient({
     }
   }, []);
 
-  const scheduleReconnect = useCallback(() => {
-    if (reconnectTimerRef.current) return;
-    const attempt = reconnectAttemptRef.current;
-    const delay = Math.min(1000 * 2 ** attempt, 10000);
-    reconnectTimerRef.current = setTimeout(() => {
-      reconnectTimerRef.current = null;
-      reconnectAttemptRef.current += 1;
-      void subscribeChannels();
-    }, delay);
-    setConnectionState("reconnecting");
-  }, [subscribeChannels]);
-
-  const handleChannelStatus = useCallback(
-    (key: "sync" | "session", status: string) => {
-      if (status === "SUBSCRIBED") {
-        channelStatusRef.current[key] = true;
-        reconnectAttemptRef.current = 0;
-        clearReconnectTimer();
-      }
-      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-        channelStatusRef.current[key] = false;
-        scheduleReconnect();
-      }
-      updateConnectionState();
-    },
-    [clearReconnectTimer, scheduleReconnect, updateConnectionState]
-  );
+  const handleChannelStatus = (key: "sync" | "session", status: string) => {
+    if (status === "SUBSCRIBED") {
+      channelStatusRef.current[key] = true;
+      reconnectAttemptRef.current = 0;
+      clearReconnectTimer();
+    }
+    if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+      channelStatusRef.current[key] = false;
+      scheduleReconnect();
+    }
+    updateConnectionState();
+  };
 
   const subscribeChannels = useCallback(async () => {
     await ensureRealtimeAuth();
@@ -406,7 +391,19 @@ export function LiveClient({
         }
       )
       .subscribe((status) => handleChannelStatus("session", status));
-  }, [sessionId, supabase, loadCurrent, ensureRealtimeAuth, refreshState, handleChannelStatus]);
+  }, [sessionId, supabase, loadCurrent, ensureRealtimeAuth, refreshState]);
+
+  const scheduleReconnect = (): void => {
+    if (reconnectTimerRef.current) return;
+    const attempt = reconnectAttemptRef.current;
+    const delay = Math.min(1000 * 2 ** attempt, 10000);
+    reconnectTimerRef.current = setTimeout(() => {
+      reconnectTimerRef.current = null;
+      reconnectAttemptRef.current += 1;
+      void subscribeChannels();
+    }, delay);
+    setConnectionState("reconnecting");
+  };
 
   useEffect(() => {
     void subscribeChannels();
