@@ -107,6 +107,7 @@ export function LiveClient({
   });
   const reconnectAttemptRef = useRef(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const connectionWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const ensureRealtimeAuth = useCallback(async () => {
     const { data } = await supabase.auth.getSession();
@@ -297,11 +298,19 @@ export function LiveClient({
     }
   }, []);
 
+  const clearConnectionWatchdog = useCallback(() => {
+    if (connectionWatchdogRef.current) {
+      clearTimeout(connectionWatchdogRef.current);
+      connectionWatchdogRef.current = null;
+    }
+  }, []);
+
   const handleChannelStatus = (key: "sync" | "session", status: string) => {
     if (status === "SUBSCRIBED") {
       channelStatusRef.current[key] = true;
       reconnectAttemptRef.current = 0;
       clearReconnectTimer();
+      clearConnectionWatchdog();
     }
     if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
       channelStatusRef.current[key] = false;
@@ -312,6 +321,15 @@ export function LiveClient({
 
   const subscribeChannels = useCallback(async () => {
     await ensureRealtimeAuth();
+    clearConnectionWatchdog();
+    if (typeof navigator !== "undefined" && navigator.onLine) {
+      try {
+        supabase.realtime.disconnect();
+        supabase.realtime.connect();
+      } catch {
+        // Ignore realtime reconnect errors; subscribe will still attempt.
+      }
+    }
     if (syncChannelRef.current) {
       supabase.removeChannel(syncChannelRef.current);
     }
@@ -321,6 +339,14 @@ export function LiveClient({
 
     channelStatusRef.current = { sync: false, session: false };
     setConnectionState(typeof navigator !== "undefined" && !navigator.onLine ? "offline" : "connecting");
+
+    // Start a watchdog: if we don't see SUBSCRIBED soon, retry.
+    connectionWatchdogRef.current = setTimeout(() => {
+      const { sync, session } = channelStatusRef.current;
+      if (!sync || !session) {
+        scheduleReconnect();
+      }
+    }, 5000);
 
     syncChannelRef.current = supabase
       .channel(`sync-${sessionId}`)
@@ -391,7 +417,14 @@ export function LiveClient({
         }
       )
       .subscribe((status) => handleChannelStatus("session", status));
-  }, [sessionId, supabase, loadCurrent, ensureRealtimeAuth, refreshState]);
+  }, [
+    sessionId,
+    supabase,
+    loadCurrent,
+    ensureRealtimeAuth,
+    refreshState,
+    clearConnectionWatchdog,
+  ]);
 
   const scheduleReconnect = (): void => {
     if (reconnectTimerRef.current) return;
